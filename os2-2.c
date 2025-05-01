@@ -103,9 +103,12 @@ int main()
                 {
                     c->is_context_switching  = true;
                     c->context_switch_end_time = clock + 10;
-                    idle_cnt[(c-cpus) + 1]++;
                     c->prev_proc = (c->running);
                     c->context_proc = list_entry(c->ready_queue.next, process, code_list);
+
+                    //-----------------------------------
+                    c->idle_clocks++;
+                    idle_cnt[(c-cpus) + 1]++;
                 }
                 
             }
@@ -358,6 +361,8 @@ void init_process()
         cpus[i].running = NULL;
         cpus[i].idle_clocks = 0;
         cpus[i].total_clocks = 0;
+
+        //cpus[i].idle_clocks++;
     }
 }
 
