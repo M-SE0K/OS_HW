@@ -1,410 +1,291 @@
-// -> CODE_TUPlE[0]이 끝난 이후 CODE_TUPLE[1]이 실행되는데 이때 clock의 전환 없이 진행되므로 누락. 현재 한 clock에서 두 번의 IO 작업 진행 중
-// 	Ex) clock = 5일 때 CODE_TUPLE[0]의 작업 종료, clock = 6일 때 TUPLE[1] 작업시작이여야 	함.
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
 #include <limits.h>
-#include "list.h"
-#include <stdbool.h>
 
-#define IDLE_PID 100
+#define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
 
-typedef struct {
-    unsigned char op;
+#define container_of(ptr, type, member) ({                      \
+        const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
+        (type *)( (char *)__mptr - offsetof(type,member) );})
+
+#define LIST_POISON1  ((void *) 0x00100100)
+#define LIST_POISON2  ((void *) 0x00200200)
+
+struct list_head {
+	struct list_head *next, *prev;
+};
+
+#define LIST_HEAD_INIT(name) { &(name), &(name) }
+
+#define LIST_HEAD(name) \
+	struct list_head name = LIST_HEAD_INIT(name)
+
+#define INIT_LIST_HEAD(ptr) do { \
+	(ptr)->next = (ptr); (ptr)->prev = (ptr); \
+} while (0)
+
+static inline void __list_add(struct list_head *new,
+			      struct list_head *prev,
+			      struct list_head *next) {
+	next->prev = new;
+	new->next = next;
+	new->prev = prev;
+	prev->next = new;
+}
+
+static inline void list_add(struct list_head *new, struct list_head *head) {
+	__list_add(new, head, head->next);
+}
+
+static inline void list_add_tail(struct list_head *new, struct list_head *head) {
+	__list_add(new, head->prev, head);
+}
+
+static inline void __list_del(struct list_head * prev, struct list_head * next) {
+	next->prev = prev;
+	prev->next = next;
+}
+
+static inline void list_del(struct list_head *entry) {
+	__list_del(entry->prev, entry->next);
+	entry->next = LIST_POISON1;
+	entry->prev = LIST_POISON2;
+}
+
+static inline void list_del_init(struct list_head *entry) {
+	__list_del(entry->prev, entry->next);
+	INIT_LIST_HEAD(entry);
+}
+
+static inline void list_move(struct list_head *list, struct list_head *head) {
+        __list_del(list->prev, list->next);
+        list_add(list, head);
+}
+
+static inline void list_move_tail(struct list_head *list,
+				  struct list_head *head) {
+        __list_del(list->prev, list->next);
+        list_add_tail(list, head);
+}
+
+static inline int list_empty(const struct list_head *head) {
+	return head->next == head;
+}
+
+#define list_entry(ptr, type, member) \
+	container_of(ptr, type, member)
+
+#define list_for_each(pos, head) \
+  for (pos = (head)->next; pos != (head);	\
+       pos = pos->next)
+
+#define list_for_each_prev(pos, head) \
+	for (pos = (head)->prev; prefetch(pos->prev), pos != (head); \
+        	pos = pos->prev)
+
+#define list_for_each_safe(pos, n, head) \
+	for (pos = (head)->next, n = pos->next; pos != (head); \
+		pos = n, n = pos->next)
+
+#define list_for_each_entry(pos, head, member)				\
+	for (pos = list_entry((head)->next, typeof(*pos), member);	\
+	     &pos->member != (head);					\
+	     pos = list_entry(pos->member.next, typeof(*pos), member))
+
+#define list_for_each_entry_reverse(pos, head, member)			\
+	for (pos = list_entry((head)->prev, typeof(*pos), member);	\
+	     &pos->member != (head); 	\
+	     pos = list_entry(pos->member.prev, typeof(*pos), member))
+
+#define list_for_each_entry_safe(pos, n, head, member)			\
+	for (pos = list_entry((head)->next, typeof(*pos), member),	\
+		n = list_entry(pos->member.next, typeof(*pos), member);	\
+	     &pos->member != (head); 					\
+	     pos = n, n = list_entry(n->member.next, typeof(*n), member))
+
+#define list_for_each_entry_safe_reverse(pos, n, head, member)		\
+	for (pos = list_entry((head)->prev, typeof(*pos), member),	\
+		n = list_entry(pos->member.prev, typeof(*pos), member);	\
+	     &pos->member != (head); 					\
+	     pos = n, n = list_entry(n->member.prev, typeof(*n), member))
+
+#if 0    //DEBUG
+#define debug(fmt, args...) fprintf(stderr, fmt, ##args)
+#else
+#define debug(fmt, args...)
+#endif
+
+typedef struct{
+    unsigned char action;
     unsigned char length;
-} code_tuple;
+    int visit;                                  //처음 I/O코드가 실행될 때 출력해주기 위해 방문 표시
+} Code_tuples;
 
-typedef struct {
+
+typedef struct{
     int pid;
     int arrival_time;
     int code_bytes;
-} process_info;
+    int pc;                                     //program counter
+    int complete;                               //program이 종료됐는지 표시
+    Code_tuples* code;
+    struct list_head job, ready, wait;
+} Process;
 
-typedef struct{
-    process_info info;
-    code_tuple* tuples;
+///////////////////////////////////////////////////////////////////////////////////////////-----> 전역변수 선언
+    Process *process;                                                                    //
+    Process *next;                                                                       //
+    Process *idle;                                                                       //
+    Code_tuples code_tuple;                                                              //
+    int clock_=0, idle_time=0, cont_sw_t = 0, cont_sw_cur, cont_sw_flag;                 //
+                                                                                         // 
+    LIST_HEAD(job_q);                                                                    //
+    LIST_HEAD(ready_q);                                                                  //
+    LIST_HEAD(wait_q);                                                                   //
+///////////////////////////////////////////////////////////////////////////////////////////
 
-    int pc;
-    int remaining_time;
 
-    struct list_head code_list;
-} process;
+void process_copy(Process in, Process* out){
+    out->pid = in.pid;
+    out->arrival_time = in.arrival_time;
+    out->code_bytes = in.code_bytes;
+}
 
-typedef struct{
-    struct list_head ready_queue;
-
-    process* running;
-    process* prev_proc;
-    process* context_proc;
-
-    int idle_clocks;
-    int total_clocks;  
-    
-    bool is_io_wait;
-
-    bool is_context_switching;
-    int context_switch_end_time;
-    
-    bool is_wait;
-} cpu;
-
-LIST_HEAD(job_queue);
-
-cpu cpus[2];
-process* IDLE_PROC;
-bool exit_flag = false;
-
-void binaryFile_input();                                    //초기 이진 파일 입력 받는 메서드
-void context_switch(cpu* c, int clock);                     
-bool job_exit(int clock);
-bool is_context_switching_check(cpu* c, int clock, int i);  
-void load_job_to_ready_queue(int clock);                    //job_queue의 프로세스를 ready_queue로 올리는 메서드
-void init_idle_process();                                   //idle_process 초기화하는 메서드
-void terminate_current_process(cpu* c, int clock);          //현재 실행 중인 프로세스의 종료를 확인하기 위한 메서드
-
-int main()
-{
-    init_idle_process();
-    
-    for (int i = 0; i < 2; i++)
-    {
-        INIT_LIST_HEAD(&cpus[i].ready_queue);
-        cpus[i].running = NULL;
-        cpus[i].idle_clocks = 0;
-        cpus[i].total_clocks = 0;
+//context switching 수행해주고 끝나면 true 반환
+int context_switching_done(){
+    cont_sw_t++;
+    clock_++;
+    if(cont_sw_t == 9){
+        idle_time += 10;
+        cont_sw_t = 0;
+        return 1;
     }
+    return 0;
+}
 
-    binaryFile_input();
+//IO 동작 처리하는 함수
+void I_O_operation(Process *cur_p){
+    if(cur_p->code[cur_p->pc].visit == 0){ //처음 도착하면 I/O 동작 출력
+        cur_p->code[cur_p->pc].visit = 1;
+        printf("%04d CPU: OP_IO START len: %03d ends at: %04d\n", clock_, cur_p->code[cur_p->pc].length, clock_ + cur_p->code[cur_p->pc].length);
+    }
+    if(cur_p->code[cur_p->pc].length != 0){ //해당 코드 길이를 1씩 줄여가며 수행시간 체크해줌
+        cur_p->code[cur_p->pc].length--;
+        idle_time++;
+    }else{  //코드 길이만큼 수행했으면 pc증가
+        cur_p->pc++;
+        clock_--;   //pc 증가할 때에는 clock이 증가X
+    }
+}
 
-    int clock = 0;
-    cpus[0].running = IDLE_PROC;
-    cpus[1].running = IDLE_PROC;
+//CPU 동작 처리하는 함수
+void CPU_operation(Process *cur_p){ 
+    if(cur_p->code[cur_p->pc].length != 0){
+        cur_p->code[cur_p->pc].length--;
+    }else{
+        cur_p->pc++;
+        clock_--;
+    }
+}
 
-    int count = 50;
-    while(1)
-    {
-        //printf("\n----------------------- clock: %d --------------------\n", clock);
-        load_job_to_ready_queue(clock);
-        //printf("[DEBUG1]\n");
-        for (int i = 0; i < 2; i++)
-        {
-            cpu* c = &cpus[i];
+void simulator(){                   //simulator 기본 구조
+    Process *cur_p = idle;          //현재 동작하고 있는 프로세스
+    Process *next_p;                //다음 프로세스
+    int flag = 0, count = 0;        //첫 반복 때 context switching 수행을 막기 위한 flag
 
-            //printf("[DEBUG2]\n");
-            if(!is_context_switching_check(c, clock, i))
-            {
-                //printf("[DEBUG3]\n");
-                if (exit_flag)
-                    break;
-                continue;
-            }   
+    while(1){
 
-            if (c->running == IDLE_PROC && !list_empty(&c->ready_queue))
-            //순수 IDLE 프로세스인데 수행할 작업이 존재하는 경우
-            {
-                //printf("[DEBUG4]\n");
-                if (clock == 0)
-                {
-                    //printf("[DEBUG5]\n");
-                    (c->running) = list_entry(c->ready_queue.next, process, code_list);
-                    
-                }
-                else
-                {
-                    //printf("[DEBUG6]\n");
-                    c->is_context_switching  = true;
-                    c->context_switch_end_time = clock + 10;
-                    c->prev_proc = (c->running);
-                    c->context_proc = list_entry(c->ready_queue.next, process, code_list);
-                }
-                //list_del_init(c->ready_queue.next);
-                
+        //job_q에 있는 작업들 ready_q에 로드 및 종료조건 검사
+        list_for_each_entry(process, &job_q, job){
+            if(process->arrival_time == clock_){
+                list_add_tail(&process->ready, &ready_q);
+                printf("%04d CPU: Loaded PID: %03d\tArrival: %03d\tCodesize: %03d\tPC: %03d\n", clock_, process->pid, process->arrival_time, process->code_bytes, process->pc);
             }
-            //printf("[DEBUG7]\n");
-            if (c->running == IDLE_PROC && !c->is_context_switching && !c->is_io_wait)
-            {
-                //printf("[DEBUG8]\n");
-                c->idle_clocks++;
-                c->total_clocks++;
-                continue;
+            else if(process->pid!=100 && process->complete==0){ //idle process를 제외하고 수행해야하는 process를 count
+                count++;
             }
+        }if(count == 0){
+            printf("*** TOTAL CLOCKS: %04d IDLE: %04d UTIL: %2.2f%%\n", clock_-1, idle_time, ((clock_-1)-idle_time)*1.0/(clock_-1)*100);
+            break;
+        }else{
+            count = 0;
+        }
 
-            //printf("[DEBUG9]\n");
-            code_tuple current = (c->running)->tuples[(c->running)->pc];
-            
-            switch (current.op)
-            {
-                case 0:
-                {   
-                    //printf("[DEBUG10]\n");
-                    //printf("[DEBUG: CPU_WORK]\n");
-                    if ((c->running)->remaining_time == 0)  
-                        (c->running)->remaining_time = current.length;
-                }
-                case 1:
-                {
-                    //printf("[DEBUG11]\n");
-                    if ((c->running)->remaining_time == 0 && !(c->is_io_wait))
-                    {
-                        //printf("[DEBUG12]\n");
-                        (c->running)->remaining_time = current.length;
-                        printf("%04d CPU%d: OP_IO START len: %03d ends at: %04d\n", clock, i + 1, current.length, clock + current.length);
-                        (c->is_io_wait) = true;
-                    }
-                    c->idle_clocks++;
-                    //printf("[DEBUG_IO_WAIT]_[clock: %d] [CPU: %d -> PID: %04d]\n", clock,(c-cpus) + 1, c->running->info.pid);
+        list_move_tail(&idle->ready, &ready_q); //idle process를 ready_q의 맨 뒤로 보내고
+
+        //ready_q 맨 앞에 있는 process 가져옴
+        struct list_head *next_node = ready_q.next;
+        next_p = list_entry(next_node, Process, ready);
+
+        if(cur_p->pid == 100){ //현재 수행 process가 idle일 때 다음 process를 수행하기 위해 context switch
+            if(flag){
+                if(context_switching_done()){   //context switch 소요시간이 종료되면
+                    cur_p = next_p;             //현재 process를 다음 process로 전환
                 }
                 
+            }else{
+                flag = 1;
+                cur_p = next_p;
             }
-
-            if ((c->running) != IDLE_PROC)
-                terminate_current_process(c, clock);
         }
 
-        
-
-        clock++;
-
-        if (exit_flag)  break;
-    }
-}
-
-
-void terminate_current_process(cpu* c, int clock)
-{
-    //printf("[DEBUG13]\n");
-    (c->running)->remaining_time--;
-    c->total_clocks++;
-
-    //printf("[DEBUG]_[clock: %d] [CPU%d -> PID: %04d -> remaining: %d]\n", clock,(c-cpus) + 1, c->running->info.pid, (c->running)->remaining_time);
-    if ((c->running)->remaining_time == 0)
-    {
-        (c->is_io_wait) = false;
-        (c->running)->pc++;
-        //printf("[DEBUG_IO_EXIT_NEXT_JOB] CPU: %d and clock: %d\n", (c-cpus) + 1, clock);
-        if ((c->running)->pc >= (c->running->info.code_bytes / 2))
-        {
-            
-            
-            (c->is_context_switching) = true;
-            (c->context_switch_end_time) = clock + 10;
-            (c->prev_proc) = (c->running);
-            
-            if (!list_empty(&c->ready_queue))
-            {
-                c->context_proc = list_entry(c->ready_queue.next, process, code_list);
-                list_del_init(c->ready_queue.next);
+        if(cur_p->pid != 100){  //현재 수행중인 process가 있을 때
+            if(cur_p->pc >= cur_p->code_bytes / 2){ //process 종료 조건
+                list_del(&cur_p->ready);
+                cur_p->complete = 1;                //완료됐다고 표시
+                cur_p = idle;                       //context switch 수행을 위해 현재 동작중인 process가 idle이라고 표시
             }
-            else
-                c->running = IDLE_PROC;
-            //이때 바로 빼주면 (ready_queue) context_switch에서 연산하기 편할 거 같음
-        }
-    }
-    //printf("[DEBUG14]\n");
-}
-
-bool is_context_switching_check(cpu* c, int clock, int i)
-{
-    if (c->is_context_switching)
-    //현재 문맥전환 중인 상태인 경우 or 문맥전환을 시작해야 되는 경우
-    {
-        if (clock == c->context_switch_end_time)
-        //문맥전환이 종료 시간이 된 경우
-        {   
-            if (!list_empty(&c->ready_queue))
-            //ready_queue에 전환 이후에도 작업해야할 프로세스가 남아있는 경우
-            {
-                printf("%04d CPU%d: Switched\tfrom: %03d\tto: %03d\n", clock, i + 1, (c->prev_proc)->info.pid, (c->context_proc)->info.pid);
-                (c->running) = c->context_proc;
-            }
-            else
-            //ready_queue가 비어 있는 경우
-            {
-                if ((c->prev_proc) == IDLE_PROC)
-                //IDLE-> process
-                {
-                    printf("%04d CPU!%d: Switched\tfrom: %03d\tto: %03d\n", clock, i + 1, (c->prev_proc)->info.pid, (c->context_proc->info).pid);
-                    (c->running) = c->context_proc;
-                }
-                else
-                //process -> IDLE
-                {
-                    printf("%04d CPU%d: Switched\tfrom: %03d\tto: %03d\n", clock, i + 1, (c->prev_proc)->info.pid, (IDLE_PROC->info).pid);
-                    (c->running) = IDLE_PROC;
-                }
-                    
-            }
-            c->is_context_switching = false;
-        }
-        else
-        //현재 문맥전환 상태이며, 문맥전환 종료 시간이 되지 않은 경우
-        {
-            c->idle_clocks++;
-            c->total_clocks++;
-
-            return false;   
-        }
-    }
-    return true;
-}
-
-void context_switch(cpu* c, int clock)
-{
-    if(!list_empty(&c->ready_queue))
-    {
-        list_del_init(c->ready_queue.next);
-        (c->running) = list_entry(c->ready_queue.next, process, code_list);
-    }
-    else
-    {
-        (c->running) = IDLE_PROC;
-    }
-    c->is_context_switching = false;
-}
-
-bool job_exit(int clock)
-{
-    if ( (!(cpus[0].is_io_wait) && !(cpus[1].is_io_wait)) && ((cpus[0].running == IDLE_PROC) && (cpus[1].running == IDLE_PROC)))
-    {
-        if (list_empty(&cpus[0].ready_queue) && list_empty(&cpus[1].ready_queue))
-        {
-            int TOTAL_CLOCKS = clock;
-            int CPU1_IDLE_CLOCKS = cpus[0].idle_clocks;
-            int CPU2_IDLE_CLOCKS = cpus[1].idle_clocks;
-
-            double CPU1_UTIL = ((double)((double)TOTAL_CLOCKS - (double)CPU1_IDLE_CLOCKS) / (double)(TOTAL_CLOCKS)) * 100;
-            double CPU2_UTIL = ((double)((double)TOTAL_CLOCKS - (double)CPU2_IDLE_CLOCKS) / (double)(TOTAL_CLOCKS)) * 100;
-
-            double TOTAL_UTIL = (CPU1_UTIL + CPU2_UTIL) / 2;
-
-            
-            printf("*** TOTAL CLOCKS: %04d CPU1 IDLE: %04d CPU2 IDLE: %04d CPU1 UTIL: %2.2f%% CPU2 UTIL: %2.2f%% TOTAL UTIL: %2.2f%%\n",
-                 TOTAL_CLOCKS, CPU1_IDLE_CLOCKS, CPU2_IDLE_CLOCKS, CPU1_UTIL, CPU2_UTIL, TOTAL_UTIL);
-            exit_flag = true;
-            return true;
-        }
-    }
-    return false;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//-----------------------------------------------------------------------------------------------------------------
-void binaryFile_input()
-{
-    process_info temp_info;
-    code_tuple temp_tuple;
-
-    while(fread(&temp_info, sizeof(process_info), 1, stdin) == 1)
-    {
-        process* new_proc = (process*)malloc(sizeof(process));
-        new_proc->info = temp_info;
-        new_proc->tuples = (code_tuple*)malloc(sizeof(code_tuple) * (temp_info.code_bytes / 2));
-        
-        for (int i = 0; i < (temp_info.code_bytes / 2); i++)
-        {
-            fread(&temp_tuple, sizeof(code_tuple), 1, stdin);
-            new_proc->tuples[i] = temp_tuple;
-        }
-        
-        new_proc->pc = 0;
-        INIT_LIST_HEAD(&new_proc->code_list);
-        list_add_tail(&new_proc->code_list, &job_queue);
-    }
-}
-
-
-void init_idle_process()
-{
-    IDLE_PROC = (process*)malloc(sizeof(process));
-    IDLE_PROC->info.pid = IDLE_PID;
-    IDLE_PROC->info.arrival_time = 0;
-    IDLE_PROC->info.code_bytes = 2;
-    IDLE_PROC->tuples = (code_tuple*)malloc(sizeof(code_tuple));
-
-    IDLE_PROC->tuples[0].op = 0xFF;
-    IDLE_PROC->tuples[0].length = 1;
-    IDLE_PROC->pc = 0;
-    INIT_LIST_HEAD(&IDLE_PROC->code_list);
-}
-
-void load_job_to_ready_queue(int clock)
-{
-    //printf("[DEBUG15]\n");
-    process* pos, *n;
-
-    list_for_each_entry_safe(pos, n, &job_queue, code_list)
-    {
-        struct list_head* p;
-        int size1 = 0, size2 = 0;
-
-        if ((pos->info.arrival_time == clock))
-        {
-            //printf("[DEBUG17]\n");
-
-            list_for_each(p, &cpus[0].ready_queue)  {   size1++;    }
-            list_for_each(p, &cpus[1].ready_queue)  {   size2++;    }
-
-            int target = size1 <= size2 ? 1 : 2;
-            //printf("[clock: %d] target=CPU%d\n", clock, target);
-           
-            if (cpus[target - 1].is_context_switching)
-            //문맥전한 중인 경우
-                cpus[target - 1].is_wait = true;
-
-            else if (!cpus[target - 1].is_context_switching && cpus[target - 1].is_wait)
-            //문맥 전환이 종료되어 밀린 프로세스를 로드하는 경우
-            {
-                process* _pos, *_n;
-                cpus[target - 1].is_wait = false;
-                list_for_each_entry_safe(_pos, _n, &job_queue, code_list)
-                {
-                    if (clock < _pos->info.arrival_time )
-                        break;
-                    struct list_head* _p;
-                    int _size1 = 0, _size2 = 0;
-                    list_for_each(_p, &cpus[0].ready_queue)  {   size1++;    }
-                    list_for_each(_p, &cpus[1].ready_queue)  {   size2++;    }
-
-                    int _target = _size1 <= _size2 ? 1 : 2;
-                    list_move_tail(&_pos->code_list, &cpus[target].ready_queue.next);
-                    printf("[DEBUG19]");
-                    printf("%04d CPU%d: Loaded: PID: %03d\tArrival: %03d\tCodesize: %03d\n", clock, target, _pos->info.pid, _pos->info.arrival_time, _pos->info.code_bytes);
+            else{
+                if(cur_p->code[cur_p->pc].action == 1){
+                    I_O_operation(cur_p);   //IO 동작일 때
+                }else{
+                    CPU_operation(cur_p);   //cpu 동작일 때
                 }
             }
-            else
-            //그냥 정상적인 경우
-            {
-                printf("[DEBUG20]\n");
-                list_move_tail(&pos->code_list, &cpus[target - 1].ready_queue.next);
-                printf("%04d CPU%d: Loaded PID: %03d\tArrival: %03d\tCodesize: %03d\n", clock, target, pos->info.pid, pos->info.arrival_time, pos->info.code_bytes);
-            }
-            //cpus[target - 1].running = pos;
-            
+            clock_++;
         }
     }
-    
-    if (clock == 0)
-    {
-        printf("%04d CPU%d: Loaded PID: %03d\tArrival: %03d\tCodesize: %03d\n", clock, 1, IDLE_PROC->info.pid, IDLE_PROC->info.arrival_time, IDLE_PROC->info.code_bytes);
-        printf("%04d CPU%d: Loaded PID: %03d\tArrival: %03d\tCodesize: %03d\n", clock, 2, IDLE_PROC->info.pid, IDLE_PROC->info.arrival_time, IDLE_PROC->info.code_bytes);
+}
+
+int main(int argc, char* argv[]){
+
+    Process cur;
+
+    while(fread(&cur, sizeof(int) * 3, 1, stdin) == 1){
+        process = malloc(sizeof(*process));
+        
+        process_copy(cur, process);
+        
+        INIT_LIST_HEAD(&process->job);
+        INIT_LIST_HEAD(&process->ready);
+        INIT_LIST_HEAD(&process->wait);
+
+        process->code = malloc(process->code_bytes / 2 * sizeof(Code_tuples));
+        for(int i = 0; i < process->code_bytes / 2 ; i++){
+            fread(&code_tuple, sizeof(unsigned char)*2 , 1, stdin);
+            process->code[i] = code_tuple;
+        }
+
+        list_add_tail(&process->job, &job_q);
     }
 
+    idle = malloc(sizeof(Process));
+    idle->pid = 100;
+    idle->code_bytes=2;
+    idle->code = malloc(sizeof(Code_tuples));
+    idle->code[0].action = 0xff;
+
+    list_add_tail(&idle->job, &job_q);
+
+    simulator();    //simulator 실행
+
+    list_for_each_entry_safe(process, next, &job_q, job){
+        list_del(&process->job);
+        free(process->code);
+        free(process);
+    }
+
+    return 0;
 }
