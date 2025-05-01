@@ -52,6 +52,7 @@ LIST_HEAD(job_queue);
 cpu cpus[2];
 process* IDLE_PROC;
 bool exit_flag = false;
+int idle_cnt[2] = {};
 
 void binaryFile_input();                                    //초기 이진 파일 입력 받는 메서드
 void context_switch(cpu* c, int clock);                     
@@ -80,14 +81,14 @@ int main()
         for (int i = 0; i < 2; i++)
         {
             cpu* c = &cpus[i];
+            // if (job_exit)
+            //     exit_flag = true;
+
             //printf("1. CPU%d context_switch_end_time: %d\t is_context_switching: %d\n", i + 1, cpus[i].context_switch_end_time, cpus[i].is_context_switching);
             if(!is_context_switching_check(c, clock, i))
             {
                 if (!c->flag)
-                    continue;
-                // if (job_exit)
-                //     break;
-                
+                    continue;   
             }   
 
             if (c->running == IDLE_PROC && !list_empty(&c->ready_queue) && !c->is_context_switching)
@@ -102,6 +103,7 @@ int main()
                 {
                     c->is_context_switching  = true;
                     c->context_switch_end_time = clock + 10;
+                    idle_cnt[(c-cpus) + 1]++;
                     c->prev_proc = (c->running);
                     c->context_proc = list_entry(c->ready_queue.next, process, code_list);
                 }
@@ -123,6 +125,7 @@ int main()
                 {   
                     if ((c->running)->remaining_time == 0)  
                     {
+
                         (c->running)->remaining_time = current.length;
                        // printf("---------[DEBUG_IS_CPU_WORK_START] PID: %03d------------\n", (c->running)->info.pid);
                     }
@@ -141,10 +144,10 @@ int main()
                         printf("%04d CPU%d: OP_IO START len: %03d ends at: %04d\n", clock, i + 1, current.length, clock + current.length);
                         (c->is_io_wait) = true;
                     }
-                    else
-                    {
-                        //printf("--------[DEBUG_IS_IO_WORK_WAIT] PID: %03d------------\n", (c->running)->info.pid);
-                    }
+                    // else
+                    // {
+                    //     //printf("--------[DEBUG_IS_IO_WORK_WAIT] PID: %03d------------\n", (c->running)->info.pid);
+                    // }
                     c->idle_clocks++;
                     break;
                 }
@@ -154,13 +157,8 @@ int main()
 
             if ((c->running) != IDLE_PROC)
                 terminate_current_process(c, clock);
-        }
-
-        
-
+        }  
         clock++;
-
-        if (exit_flag)  break;
     }
 }
 
@@ -187,6 +185,7 @@ void terminate_current_process(cpu* c, int clock)
             (c->is_context_switching) = true;
             //printf("[DEBUG_IS_CONTEXT_SWITCHING -- CPU%d]: %d\n", (c-cpus) + 1, (c->is_context_switching));
             (c->context_switch_end_time) = clock + 11;
+            idle_cnt[(c-cpus) + 1]--;
 
             // printf("%d\n", c->context_switch_end_time);
             (c->prev_proc) = (c->running);
@@ -238,16 +237,20 @@ bool is_context_switching_check(cpu* c, int clock, int i)
                 if ((c->prev_proc) == IDLE_PROC)
                 //IDLE-> process
                 {
+                    
                     printf("%04d CPU%d: Switched\tfrom: %03d\tto: %03d\n", clock, i + 1, (c->prev_proc)->info.pid, (c->context_proc->info).pid);
                     (c->running) = c->context_proc;
                 }
                 else
                 //process -> IDLE
                 {
+                    job_exit(clock);
+
                     printf("%04d CPU%d: Switched\tfrom: %03d\tto: %03d\n", clock, i + 1, (c->prev_proc)->info.pid, (IDLE_PROC->info).pid);
                     (c->running) = IDLE_PROC;
                 }
-                    
+
+                //printf("%04d CPU%d: Switched\tfrom: %03d\tto: %03d\n", clock, i + 1, (c->prev_proc)->info.pid, (IDLE_PROC->info).pid);
             }
             c->is_context_switching = false;
         }
@@ -279,13 +282,22 @@ void context_switch(cpu* c, int clock)
 
 bool job_exit(int clock)
 {
-    if ( (!(cpus[0].is_io_wait) && !(cpus[1].is_io_wait)) && ((cpus[0].running == IDLE_PROC) && (cpus[1].running == IDLE_PROC)))
+    // printf("clock: %d\n", clock);
+    // if (cpus[0].running -> remaining_time == 0) printf("cpus[0].running -> remaining_time == 0!\n");
+    // if (cpus[0].running == IDLE_PROC)           printf("cpus[0].running == IDLE_PROC!\n");
+
+    // if (cpus[1].running -> remaining_time == 0) printf("cpus[1].running -> remaining_time == 0!\n");
+    // if (cpus[1].running == IDLE_PROC)           printf("cpus[1].running == IDLE_PROC!\n");
+
+    if (((cpus[0].running -> remaining_time <= 0) || cpus[0].running == IDLE_PROC)
+     && ((cpus[1].running -> remaining_time <= 0) || cpus[1].running == IDLE_PROC))
     {
-        if (list_empty(&cpus[0].ready_queue) && list_empty(&cpus[1].ready_queue))
+        if ((list_empty(&cpus[0].ready_queue) && list_empty(&cpus[1].ready_queue)) && list_empty(&job_queue))
         {
-            int TOTAL_CLOCKS = clock;
-            int CPU1_IDLE_CLOCKS = cpus[0].idle_clocks;
-            int CPU2_IDLE_CLOCKS = cpus[1].idle_clocks;
+            
+            int TOTAL_CLOCKS = clock - 10;
+            int CPU1_IDLE_CLOCKS = cpus[0].idle_clocks - 10;
+            int CPU2_IDLE_CLOCKS = cpus[1].idle_clocks - 10;
 
             double CPU1_UTIL = ((double)((double)TOTAL_CLOCKS - (double)CPU1_IDLE_CLOCKS) / (double)(TOTAL_CLOCKS)) * 100;
             double CPU2_UTIL = ((double)((double)TOTAL_CLOCKS - (double)CPU2_IDLE_CLOCKS) / (double)(TOTAL_CLOCKS)) * 100;
@@ -296,9 +308,11 @@ bool job_exit(int clock)
             printf("*** TOTAL CLOCKS: %04d CPU1 IDLE: %04d CPU2 IDLE: %04d CPU1 UTIL: %2.2f%% CPU2 UTIL: %2.2f%% TOTAL UTIL: %2.2f%%\n",
                  TOTAL_CLOCKS, CPU1_IDLE_CLOCKS, CPU2_IDLE_CLOCKS, CPU1_UTIL, CPU2_UTIL, TOTAL_UTIL);
             exit_flag = true;
+            exit(0);
             return true;
         }
     }
+    
     return false;
 }
 void binaryFile_input()
@@ -351,7 +365,7 @@ void load_job_to_ready_queue(int clock)
 {
     //printf("---------[DEBUG_IS_LOAD_JOB_START]--------\n");
     process* pos, *n;
-
+    
     list_for_each_entry_safe(pos, n, &job_queue, code_list)
     //entry_safe 함수로 인한 무한루프, 반복도중 pos = n 순서가 깨지는 경우. move_tail 써서 구현해버리자.
     {
