@@ -44,7 +44,7 @@ typedef struct{
     bool is_context_switching;
     int context_switch_end_time;
     
-    bool is_wait;
+    bool flag;
 } cpu;
 
 LIST_HEAD(job_queue);
@@ -71,7 +71,7 @@ int main()
     cpus[0].running = IDLE_PROC;
     cpus[1].running = IDLE_PROC;
 
-    int count = 50;
+    int count = 60;
     while(1)
     {
         //printf("\n--------[clock: %d]------\n", clock);
@@ -80,13 +80,14 @@ int main()
         for (int i = 0; i < 2; i++)
         {
             cpu* c = &cpus[i];
-
+            //printf("1. CPU%d context_switch_end_time: %d\t is_context_switching: %d\n", i + 1, cpus[i].context_switch_end_time, cpus[i].is_context_switching);
             if(!is_context_switching_check(c, clock, i))
             {
+                if (!c->flag)
+                    continue;
+                // if (job_exit)
+                //     break;
                 
-                if (job_exit)
-                    break;
-                continue;
             }   
 
             if (c->running == IDLE_PROC && !list_empty(&c->ready_queue))
@@ -116,6 +117,7 @@ int main()
 
             code_tuple current = (c->running)->tuples[(c->running)->pc];
             //printf("---------[DEBUG_IS_CURRENT_OP: %d]--------\n", current.op);
+
             switch (current.op)
             {
                 case 0:
@@ -137,7 +139,7 @@ int main()
                     if ((c->running)->remaining_time == 0 && !(c->is_io_wait))
                     {
                         (c->running)->remaining_time = current.length;
-                        printf("%04d CPU%d: OP_IO START len: %03d ends at: %04d\tPID: %03d\n", clock, i + 1, current.length, clock + current.length, c->running->info.pid);
+                        printf("%04d CPU%d: OP_IO START len: %03d ends at: %04d\n", clock, i + 1, current.length, clock + current.length);
                         (c->is_io_wait) = true;
                     }
                     else
@@ -209,6 +211,11 @@ void terminate_current_process(cpu* c, int clock)
 
 bool is_context_switching_check(cpu* c, int clock, int i)
 {
+    // if (clock == 49 || clock == 45 || clock == 46|| clock == 47|| clock == 48|| clock == 49)
+    // {
+    //     printf("\nclock: %d\tCPU%d c->is_context_switching = %d\n", clock, (c-cpus) + 1, c->is_context_switching);
+    //     printf("clock: %d\tCPU%d c->context_switch_end_time = %d\n", clock, (c-cpus) + 1, c->context_switch_end_time);
+    // }
     if (c->is_context_switching)
     //현재 문맥전환 중인 상태인 경우 or 문맥전환을 시작해야 되는 경우
     {
@@ -292,24 +299,6 @@ bool job_exit(int clock)
     }
     return false;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 void binaryFile_input()
 {
     process_info temp_info;
@@ -379,16 +368,26 @@ void load_job_to_ready_queue(int clock)
             int target = size1 <= size2 ? 1 : 2;
             //printf("[clock: %d] target=CPU%d\n", clock, target);
             
-            if (cpus[0].context_switch_end_time == clock)   cpus[0].is_context_switching = false;
-            if (cpus[1].context_switch_end_time == clock)   cpus[1].is_context_switching = false;
+            //printf("CPU%d context_switch_end_time: %d\t is_context_switching: %d\n", 1, cpus[0].context_switch_end_time, cpus[0].is_context_switching);
+            //printf("CPU%d context_switch_end_time: %d\t is_context_switching: %d\n", 2, cpus[1].context_switch_end_time, cpus[1].is_context_switching);
+            if (cpus[0].context_switch_end_time == clock)
+            {
+                is_context_switching_check(&cpus[0], clock, 0);
+                cpus[0].flag = true;
+            }
+            if (cpus[1].context_switch_end_time == clock)
+            {
+                is_context_switching_check(&cpus[1], clock, 1);
+                cpus[1].flag = true;
+            }   
 
 
             if (cpus[0].is_context_switching && cpus[1].is_context_switching)
             {
+                //printf("거짓말.\n");
                 //printf("[clock: %d]\n", clock);
                 continue;
             }
-
             // else if ()
             // //문맥 전환이 종료되어 밀린 프로세스를 로드하는 경우
             // {
@@ -413,9 +412,11 @@ void load_job_to_ready_queue(int clock)
             //그냥 정상적인 경우
             {
                 //printf("[DEBUG20]\n");
+                //printf("이리온~\n");
                 list_move_tail(&pos->code_list, &cpus[target - 1].ready_queue);
                 printf("%04d CPU%d: Loaded PID: %03d\tArrival: %03d\tCodesize: %03d\n", clock, target, pos->info.pid, pos->info.arrival_time, pos->info.code_bytes);
             }
+            jump:
             //cpus[target - 1].running = pos;
             
         }
