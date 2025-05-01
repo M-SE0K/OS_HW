@@ -90,7 +90,7 @@ int main()
                 
             }   
 
-            if (c->running == IDLE_PROC && !list_empty(&c->ready_queue))
+            if (c->running == IDLE_PROC && !list_empty(&c->ready_queue) && !c->is_context_switching)
             //순수 IDLE 프로세스인데 수행할 작업이 존재하는 경우
             {
                 if (clock == 0)
@@ -116,7 +116,6 @@ int main()
             }
 
             code_tuple current = (c->running)->tuples[(c->running)->pc];
-            //printf("---------[DEBUG_IS_CURRENT_OP: %d]--------\n", current.op);
 
             switch (current.op)
             {
@@ -173,7 +172,7 @@ void terminate_current_process(cpu* c, int clock)
     c->total_clocks++;
 
     //printf("[DEBUG]_[clock: %d] [CPU%d -> PID: %04d -> remaining: %d]\n", clock,(c-cpus) + 1, c->running->info.pid, (c->running)->remaining_time);
-    if ((c->running)->remaining_time == 0)
+    if ((c->running)->remaining_time == 0 && (c->running) != IDLE_PROC)
     //현재 실행 중인 프로세스의 명령어가 실행 종료가 될 시간이 된 경우
     {
         
@@ -188,7 +187,7 @@ void terminate_current_process(cpu* c, int clock)
             (c->is_context_switching) = true;
             //printf("[DEBUG_IS_CONTEXT_SWITCHING -- CPU%d]: %d\n", (c-cpus) + 1, (c->is_context_switching));
             (c->context_switch_end_time) = clock + 11;
-            //
+
             // printf("%d\n", c->context_switch_end_time);
             (c->prev_proc) = (c->running);
 
@@ -216,13 +215,16 @@ bool is_context_switching_check(cpu* c, int clock, int i)
     //     printf("\nclock: %d\tCPU%d c->is_context_switching = %d\n", clock, (c-cpus) + 1, c->is_context_switching);
     //     printf("clock: %d\tCPU%d c->context_switch_end_time = %d\n", clock, (c-cpus) + 1, c->context_switch_end_time);
     // }
+
     if (c->is_context_switching)
     //현재 문맥전환 중인 상태인 경우 or 문맥전환을 시작해야 되는 경우
     {
+
         //printf("[DEBUG_IS_CONTEXT_SWITCHING_END_TIME: %d] and [PID: %03d] and [clock: %d]\n", (c->context_switch_end_time), (c->running)->info.pid, clock);
         if (clock == c->context_switch_end_time)
         //문맥전환이 종료 시간이 된 경우
         {   
+
             //printf("[clock == c->context_switch_end_time: %d] and [clock: %d]\n", (c->context_switch_end_time), clock);
             if (!list_empty(&c->ready_queue))
             //ready_queue에 전환 이후에도 작업해야할 프로세스가 남아있는 경우
@@ -388,26 +390,6 @@ void load_job_to_ready_queue(int clock)
                 //printf("[clock: %d]\n", clock);
                 continue;
             }
-            // else if ()
-            // //문맥 전환이 종료되어 밀린 프로세스를 로드하는 경우
-            // {
-            //     process* _pos, *_n;
-            //     cpus[target - 1].is_wait = false;
-            //     list_for_each_entry_safe(_pos, _n, &job_queue, code_list)
-            //     {
-            //         if (clock < _pos->info.arrival_time )
-            //             break;
-            //         struct list_head* _p;
-            //         int _size1 = 0, _size2 = 0;
-            //         list_for_each(_p, &cpus[0].ready_queue)  {   size1++;    }
-            //         list_for_each(_p, &cpus[1].ready_queue)  {   size2++;    }
-
-            //         int _target = _size1 <= _size2 ? 1 : 2;
-            //         list_move_tail(&_pos->code_list, &cpus[target].ready_queue);
-            //         //printf("[DEBUG19]");
-            //         printf("%04d CPU%d: Loaded: PID: %03d\tArrival: %03d\tCodesize: %03d\n", clock, target, _pos->info.pid, _pos->info.arrival_time, _pos->info.code_bytes);
-            //     }
-            // }
             else
             //그냥 정상적인 경우
             {
