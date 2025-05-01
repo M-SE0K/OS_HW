@@ -1,0 +1,21 @@
+0000 CPU1: Loaded PID: 001	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 002	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 003	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 004	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 005	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 006	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 007	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 008	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 009	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 010	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 100	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 100	Arrival: 000	Codesize: 002
+0020 CPU1: Switched	from: 001	to: 003
+0020 CPU2: Switched	from: 002	to: 004
+0040 CPU1: Switched	from: 003	to: 005
+0040 CPU2: Switched	from: 004	to: 006
+0060 CPU1: Switched	from: 005	to: 007
+0060 CPU2: Switched	from: 006	to: 008
+0080 CPU1: Switched	from: 007	to: 009
+0080 CPU2: Switched	from: 008	to: 010
+*** TOTAL CLOCKS: 0090 CPU1 IDLE: 0040 CPU2 IDLE: 0040 CPU1 UTIL: 55.56% CPU2 UTIL: 55.56% TOTAL UTIL: 55.56%

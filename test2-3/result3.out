@@ -1,0 +1,52 @@
+0000 CPU1: Loaded PID: 001	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 002	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 003	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 004	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 005	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 006	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 007	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 008	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 009	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 010	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 011	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 012	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 014	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 015	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 016	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 017	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 018	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 019	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 020	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 021	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 022	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 023	Arrival: 000	Codesize: 002
+0000 CPU1: Loaded PID: 100	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 100	Arrival: 000	Codesize: 002
+0012 CPU2: Switched	from: 002	to: 004
+0025 CPU2: Switched	from: 004	to: 006
+0033 CPU1: Switched	from: 001	to: 003
+0036 CPU2: Switched	from: 006	to: 008
+0050 CPU2: Switched	from: 008	to: 010
+0062 CPU2: Switched	from: 010	to: 012
+0076 CPU2: Switched	from: 012	to: 015
+0080 CPU1: Switched	from: 003	to: 005
+0089 CPU2: Switched	from: 015	to: 017
+0102 CPU2: Switched	from: 017	to: 019
+0110 CPU1: Switched	from: 005	to: 007
+0114 CPU2: Switched	from: 019	to: 021
+0127 CPU2: Switched	from: 021	to: 023
+0140 CPU1: Switched	from: 007	to: 009
+0144 CPU2: Switched	from: 023	to: 100
+0164 CPU2: Migrate : COMPLETED! PID: 022
+0164 CPU2: Migrate : COMPLETED! PID: 020
+0164 CPU2: Migrate : COMPLETED! PID: 018
+0174 CPU2: Switched	from: 100	to: 022
+0187 CPU1: Switched	from: 009	to: 011
+0199 CPU1: Switched	from: 011	to: 014
+0212 CPU1: Switched	from: 014	to: 016
+0229 CPU1: Switched	from: 016	to: 100
+0234 CPU2: Switched	from: 022	to: 020
+0249 CPU1: Migrate : COMPLETED! PID: 018
+0255 CPU2: Switched	from: 020	to: 100
+0259 CPU1: Switched	from: 100	to: 018
+*** TOTAL CLOCKS: 0278 CPU1 IDLE: 0110 CPU2 IDLE: 0183 CPU1 UTIL: 60.43% CPU2 UTIL: 34.17% TOTAL UTIL: 47.30%

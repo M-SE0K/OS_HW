@@ -1,0 +1,26 @@
+0000 CPU1: Loaded PID: 001	Arrival: 000	Codesize: 004
+0000 CPU2: Loaded PID: 002	Arrival: 000	Codesize: 006
+0000 CPU1: Loaded PID: 100	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 100	Arrival: 000	Codesize: 002
+0000 CPU2: OP_IO START len: 022 ends at: 0022
+0015 CPU1: Loaded PID: 003	Arrival: 015	Codesize: 008
+0017 CPU2: Loaded PID: 004	Arrival: 017	Codesize: 010
+0022 CPU2: OP_IO START len: 016 ends at: 0038
+0038 CPU2: OP_IO START len: 001 ends at: 0039
+0042 CPU2: Loaded PID: 005	Arrival: 042	Codesize: 010
+0049 CPU2: Switched	from: 002	to: 004
+0049 CPU1: Loaded PID: 006	Arrival: 047	Codesize: 008
+0049 CPU2: OP_IO START len: 015 ends at: 0064
+0056 CPU1: Switched	from: 001	to: 003
+0056 CPU1: OP_IO START len: 017 ends at: 0073
+0064 CPU2: OP_IO START len: 005 ends at: 0069
+0069 CPU2: OP_IO START len: 019 ends at: 0088
+0088 CPU2: OP_IO START len: 038 ends at: 0126
+0115 CPU1: OP_IO START len: 012 ends at: 0127
+0137 CPU1: Switched	from: 003	to: 006
+0151 CPU2: Switched	from: 004	to: 005
+0152 CPU2: OP_IO START len: 034 ends at: 0186
+0198 CPU2: OP_IO START len: 005 ends at: 0203
+0203 CPU2: OP_IO START len: 009 ends at: 0212
+0209 CPU1: Switched	from: 006	to: 100
+*** TOTAL CLOCKS: 0212 CPU1 IDLE: 0062 CPU2 IDLE: 0184 CPU1 UTIL: 70.75% CPU2 UTIL: 13.21% TOTAL UTIL: 41.98%

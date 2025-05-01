@@ -1,0 +1,9 @@
+0000 CPU1: Loaded PID: 000	Arrival: 000	Codesize: 004
+0000 CPU1: Loaded PID: 100	Arrival: 000	Codesize: 002
+0000 CPU2: Loaded PID: 100	Arrival: 000	Codesize: 002
+0007 CPU2: Loaded PID: 001	Arrival: 007	Codesize: 004
+0017 CPU2: Switched	from: 100	to: 001
+0053 CPU1: OP_IO START len: 107 ends at: 0160
+0102 CPU2: OP_IO START len: 069 ends at: 0171
+0170 CPU1: Switched	from: 000	to: 100
+*** TOTAL CLOCKS: 0171 CPU1 IDLE: 0118 CPU2 IDLE: 0086 CPU1 UTIL: 30.99% CPU2 UTIL: 49.71% TOTAL UTIL: 40.35%
