@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-// #include "list.h"
+#include "list.h"
 
 //#include <algorithm>
 
@@ -75,19 +75,79 @@ int allocated_frame()
     frame_in_use[next_free_frame] = true;
     return next_free_frame;
 }
+struct list_head* list_quick_sort(struct list_head* head, int (*cmp)(process_raw*, process_raw*));
+
+int compare_pid(process_raw* a, process_raw* b) {
+    return a->pid - b->pid;
+}
+
+static inline void list_splice_tail(struct list_head* list, struct list_head* head) {
+    if (!list_empty(list)) {
+        struct list_head* first = list->next;
+        struct list_head* last = list->prev;
+        struct list_head* at = head;
+
+        first->prev = at->prev;
+        at->prev->next = first;
+
+        last->next = at;
+        at->prev = last;
+
+        INIT_LIST_HEAD(list); // clear original
+    }
+}
+
+struct list_head* list_quick_sort(struct list_head* head, int (*cmp)(process_raw*, process_raw*)) {
+    if (list_empty(head) || head->next->next == head) {
+        return head; // 0 or 1 element
+    }
+
+    LIST_HEAD(less);
+    LIST_HEAD(equal);
+    LIST_HEAD(greater);
+
+    struct list_head *pos, *n;
+    process_raw *pivot = list_entry(head->next, process_raw, list);
+    list_for_each_safe(pos, n, head) {
+        process_raw* current = list_entry(pos, process_raw, list);
+        list_del_init(pos);
+
+        int result = cmp(current, pivot);
+        if (result < 0) list_add_tail(&current->list, &less);
+        else if (result == 0) list_add_tail(&current->list, &equal);
+        else list_add_tail(&current->list, &greater);
+    }
+
+    struct list_head* sorted_less = list_quick_sort(&less, cmp);
+    struct list_head* sorted_greater = list_quick_sort(&greater, cmp);
+
+    // concatenate: sorted_less + equal + sorted_greater → into head
+    INIT_LIST_HEAD(head);
+    if (!list_empty(sorted_less)) list_splice_tail(sorted_less, head);
+    if (!list_empty(&equal)) list_splice_tail(&equal, head);
+    if (!list_empty(sorted_greater)) list_splice_tail(sorted_greater, head);
+
+    return head;
+}
+
+
 
 int main()
 {
     input();
     //"모든 프로세스는 이진 파일로부터 로드하고"
 
-    process_raw process[MAX_PROCESS];
+    process_raw* process;
     //"Page reference sequence를 가진 여러 프로세스(최대 10개)"
 
     pte* page_tables[sys_size.PARGETABLE_FRAMES];
     //"모든 프로세스에 1-Level 페이지 테이블을 할당하고 초기화"
-
-    //qsort(process, process_count, sizeof(process_raw), compare_by_pid);
+    list_quick_sort(&job_queue, compare_pid);
+    list_for_each_entry(process, &job_queue, list){
+        printf("PID: %d, ref_len: %d\n", process->pid, process->ref_len);
+        // for (int i = 0; i < process->ref_len; i++)
+        //     printf("ref: %d\n", process->references[i]);
+    }
     //"각 프로세스가 PID 순서대로 돌아가며"
 
     for (int i = 0; i < process_count; i++) {   page_tables[i] = calloc(sys_size.VAS_PAGES, sizeof(pte));  }
@@ -169,11 +229,11 @@ void input()
         INIT_LIST_HEAD(&proc->list);
         list_add_tail(&proc->list, &job_queue);
         
-        /*
-        [DEBUG]
+        
+        //[DEBUG]
         printf("[DEBUG INPUT FUNCTION2] PID: %d ref_len: %d\n", proc->pid, proc->ref_len);
-        for (int i = 0; i < len; i++)   printf("[DEBUG INPUT FUNCTION3] ref: %d\n", proc->references[i]);
-        */
+        //for (int i = 0; i < len; i++)   printf("[DEBUG INPUT FUNCTION3] ref: %d\n", proc->references[i]);
+        
     
     }
     sys_size.PARGETABLE_FRAMES = (sys_size.VAS_PAGES * PTE_SIZE)/sys_size.PAGESIZE;
