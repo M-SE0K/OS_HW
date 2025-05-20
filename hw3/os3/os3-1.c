@@ -49,8 +49,6 @@ bool* frame_in_use;
 void input();
 int allocated_frame();
 void print_page_tables(pte* page_tables[]);
-
-/*-------------------------------함수 정의--------------------------------------------------*/
 int allocated_frame() {
     while(next_free_frame < sys_size.PAS_FRAMES && frame_in_use[next_free_frame]) {
         next_free_frame++;
@@ -60,6 +58,62 @@ int allocated_frame() {
     return next_free_frame;
 }
 
+
+
+int main() {
+    input();
+
+    pte* page_tables[MAX_PROCESS];
+    struct list_head* pos;
+    process_raw* proc;
+    int i = 0;
+
+    list_for_each(pos, &job_queue) {
+        page_tables[i++] = calloc(sys_size.VAS_PAGES, sizeof(pte));
+    }
+
+    bool done = false;
+    while (!done) {
+        done = true;
+        i = 0;
+        list_for_each(pos, &job_queue) {
+            proc = list_entry(pos, process_raw, list);
+            if (proc->ref_len <= ref_indices[i]) {
+                i++;
+                continue;
+            }
+
+            done = false;
+            pte* pt = page_tables[i];
+
+            unsigned char page = proc->references[ref_indices[i]++];
+            bool flag = false;
+
+            if (pt[page].vflag == PAGE_VALID) {
+                pt[page].ref++;
+                flag = true;
+            } else {
+                int f = allocated_frame();
+                if (f == -1) {
+                    printf("Out of memory!!\n");
+                    ref_indices[i]--;
+                    goto jump;
+                    i++;
+                    continue;
+                }
+                pt[page].frame_no = f;
+                pt[page].vflag = PAGE_VALID;
+                pt[page].ref = 1;
+                faults[i]++;
+            }
+            i++;
+        }
+    }
+    jump:
+    print_page_tables(page_tables);
+    return 0;
+}
+/*-------------------------------함수 정의--------------------------------------------------*/
 void input() {
     fread(&sys_size.PAGESIZE, sizeof(int), 1, stdin);
     fread(&sys_size.PAS_FRAMES, sizeof(int), 1, stdin);
@@ -89,7 +143,6 @@ void input() {
     }
     next_free_frame = (sys_size.VAS_PAGES * 4 / sys_size.PAGESIZE) * process_count;
 }
-
 void print_page_tables(pte* page_tables[]) {
     struct list_head* pos;
     process_raw* proc;
@@ -123,55 +176,6 @@ void print_page_tables(pte* page_tables[]) {
     }
     printf("Total: Allocated Frames=%03d Page Faults/References=%03d/%03d\n", total_frame_count, total_page_faults, total_ref);
 }
-
-int main() {
-    input();
-
-    pte* page_tables[MAX_PROCESS];
-    struct list_head* pos;
-    process_raw* proc;
-    int i = 0;
-
-    list_for_each(pos, &job_queue) {
-        page_tables[i++] = calloc(sys_size.VAS_PAGES, sizeof(pte));
-    }
-
-    bool done = false;
-    while (!done) {
-        done = true;
-        i = 0;
-        list_for_each(pos, &job_queue) {
-            proc = list_entry(pos, process_raw, list);
-            if (proc->ref_len <= ref_indices[i]) {
-                i++;
-                continue;
-            }
-            done = false;
-            unsigned char page = proc->references[ref_indices[i]++];
-            pte* pt = page_tables[i];
-
-            if (pt[page].vflag == PAGE_VALID) {
-                pt[page].ref++;
-            } else {
-                int f = allocated_frame();
-                if (f == -1) {
-                    printf("Out of memory!!\n");
-                    i++;
-                    continue;
-                }
-                pt[page].frame_no = f;
-                pt[page].vflag = PAGE_VALID;
-                pt[page].ref = 1;
-                faults[i]++;
-            }
-            i++;
-        }
-    }
-
-    print_page_tables(page_tables);
-    return 0;
-}
-
 int compare_by_pid(const void* a, const void* b) {
     process_raw* pa = (process_raw*)a;
     process_raw* pb = (process_raw*)b;
