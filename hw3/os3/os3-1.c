@@ -64,14 +64,14 @@ int main() {
     input();
 
     //각 프로세스 별로 페이지 테이블 할당(VAS_PAGES만큼)
-    pte* page_tables_l1[process_count];
+    pte* page_tables[process_count];
     struct list_head* pos;
     process_raw* proc;
     int i = 0;
 
     //프로세스 로드 시, L1 PT를 위해 프레임 하나를 할당하고 초기화
     list_for_each(pos, &job_queue) {
-        page_tables_l1[i++] = malloc(sys_size.PAGESIZE / 4, sizeof(pte));
+        page_tables[i++] = calloc(sys_size.PAGESIZE / 4, sizeof(pte));
     }
 
 
@@ -87,7 +87,7 @@ int main() {
             //이 프로세스의 참조 시퀀스가 모두 끝났다면 패스
 
             unsigned char page = proc->references[ref_indices[i]++];    
-            pte* pt = page_tables_l1[i];                                
+            pte* pt = page_tables[i];                                
             //현재 프로세스의 참조 페이지 및 pte의 주소 저장
 
             done = false;
