@@ -87,12 +87,17 @@ void input() {
         list_add_tail(&proc->list, &job_queue);
         process_count++;
     }
+    next_free_frame = (sys_size.VAS_PAGES * 4 / sys_size.PAGESIZE) * process_count;
 }
 
 void print_page_tables(pte* page_tables[]) {
     struct list_head* pos;
     process_raw* proc;
     int i = 0;
+
+    int total_frame_count = 0;
+    int total_page_faults = 0;
+    int total_ref = 0;
 
     list_for_each(pos, &job_queue) {
         proc = list_entry(pos, process_raw, list);
@@ -103,15 +108,20 @@ void print_page_tables(pte* page_tables[]) {
         }
 
         printf("** Process %03d: Allocated Frames=%03d PageFaults/References=%03d/%03d\n",
-               proc->pid, frame_count, faults[i], ref_indices[i]);
+               proc->pid, frame_count + ((sys_size.VAS_PAGES * 4 / sys_size.PAGESIZE)), faults[i], ref_indices[i]);
 
         for (int p = 0; p < sys_size.VAS_PAGES; p++) {
             if (page_tables[i][p].vflag) {
                 printf("%03d -> %03d REF=%03d\n", p, page_tables[i][p].frame_no, page_tables[i][p].ref);
             }
         }
+        total_frame_count += frame_count + (sys_size.VAS_PAGES * 4 / sys_size.PAGESIZE);
+        total_page_faults += faults[i];
+        total_ref += ref_indices[i];
+
         i++;
     }
+    printf("Total: Allocated Frames=%03d Page Faults/References=%03d/%03d\n", total_frame_count, total_page_faults, total_ref);
 }
 
 int main() {
