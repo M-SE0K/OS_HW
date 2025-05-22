@@ -3,8 +3,8 @@
 #include <stdbool.h>
 #include "list.h"
 
-#define PAGE_INVALID (0)
-#define PAGE_VALID (1)
+#define PAGE_INVALID 0
+#define PAGE_VALID 1
 #define PTE_SIZE 4
 #define MAX_REFERENCES (256)
 #define MAX_PROCESS (10)
@@ -25,11 +25,12 @@ typedef struct{
 
 //페이지 테이블 엔트리 구조체
 typedef struct{
-    int frame_number;           //현재 페이지의 프레임의 위치
-    int page_number;            //L2 page table이 저장될 
+    int page_number;           //현재 페이지의 프레임의 위치
+    int frame_number;            //L2 page table이 저장될 
     bool vflag;                 //valid or invalid flag
     unsigned char ref;          //참조 횟수 카운트
     unsigned char pad;          //패딩
+    //pte* next;
 } pte;
 
 //프로세스 정보 구조체
@@ -38,6 +39,9 @@ typedef struct{
     int ref_len;                //페이지 참조 시퀀스 길이
     unsigned char* references;  //참조 시퀀스 (페이지 번호 배열)
     struct list_head list;      //연결 리스트용 노드
+
+    int ref_cnt;
+    int fault_cnt;
 } process_raw;
 
 
@@ -47,54 +51,95 @@ SIZE sys_size;
 LIST_HEAD(job_queue);               //프로세스 리스트(링크드리스트 헤드)
 
 int process_count = 0;              //총 프로세스 개수
-int ref_indices[MAX_PROCESS] = {};  //각 프로세스별 현재 참조 인덱스
+int ref_indices_L1[MAX_PROCESS] = {};  //각 프로세스별 현재 참조 인덱스
 int faults[MAX_PROCESS] = {};       //각 프로세스 별 page fault 카운트
 int next_free_frame = 0;            //다음에 할당할 프레임 번호
 bool* frame_in_use;                 //프레임 사용 여부 배열
 
 
+int cnt = 0;
+
 /*-------------------------------함수 선언--------------------------------------------------*/
 
 void input();                               //입력 및 초기화 함수
 int allocated_frame();                      //프레임 할당 함수
-void print_page_tables(pte* page_tables[]); //페이지 테이블 및 결과 출력 함수
-bool simulator_L1(process_raw* proc, int i, pte** page_tables_l1)
+void print_page_tables(pte** page_tables_l1, pte** page_tables_l2); //페이지 테이블 및 결과 출력 함수
+bool simulator_L1(process_raw* proc, int i, pte** page_tables_l1, pte** page_tables_l2)
 {
-    unsigned char page = proc->references[ref_indices[i]++];
-    pte* pt = page_tables_l1[page / sys_size.FRAMESIZE];                                
+    bool fault_flag = false;
+
+    unsigned char page = proc->references[ref_indices_L1[i]++];
+    pte* pt = page_tables_l1[proc->pid];                                
     //현재 프로세스의 참조 페이지 및 pte의 주소 저장
 
-    if (pt[page].vflag == PAGE_VALID)       {   pt[page].ref++; }
+    if (pt[page / sys_size.FRAMESIZE].vflag == PAGE_VALID)
     //이미 페이지가 할당 되어 있으면 참조 횟수만 증가
+    {   
+        printf("[PID: %02d REF: %03d] Page access %03d: (L1PT) Frame %03d,", proc->pid, proc->ref_cnt, page, pt[page / sys_size.FRAMESIZE].frame_number);
+        pt[page / sys_size.FRAMESIZE].ref++;
+    }
     else
     //할당되어 있지 않으면 새로 프레임 할당
     {
         int f = allocated_frame();
         if (f == -1)
         {
-            printf("Out of memory!!\n");
-            ref_indices[i]--;
+            //printf("Out of memory!!\n");
+            //ref_indices[i]--;
             return false;
         }
 
         //페이지 폴트 발생
-        pt[page].frame_number = page;
-        pt[page].page_number = f;
-        pt[page].vflag = PAGE_VALID;
-        pt[page].ref = 1;
-        faults[i]++;
+        pt[page / sys_size.FRAMESIZE].page_number = page / sys_size.FRAMESIZE;
+        pt[page / sys_size.FRAMESIZE].frame_number = f;
+        pt[page / sys_size.FRAMESIZE].vflag = true;
+        pt[page / sys_size.FRAMESIZE].ref = 1;        
+        proc->fault_cnt++;
+
+        printf("[PID: %02d REF: %03d] Page access %03d: (L1PT) PF, Allocated Frame %03d -> %03d, ",
+          proc->pid,       proc->ref_cnt,         page,              pt[page / sys_size.FRAMESIZE].page_number, pt[page / sys_size.FRAMESIZE].frame_number);
     }
+    
+    pte* pt2 = page_tables_l2[page / sys_size.FRAMESIZE];
+    if (pt2[page % sys_size.FRAMESIZE].vflag)
+    {
+        printf("(L2PT) Frame %03d", pt2[page % sys_size.FRAMESIZE].frame_number);
+        
+
+        pt2[page % sys_size.FRAMESIZE].ref++;
+    }
+    else
+    {
+        int f = allocated_frame();
+        if (f == -1)
+        {
+            printf("Out of memory!!\n");
+            ref_indices_L1[i]--;
+            return false;
+        }
+        pt2[page % sys_size.FRAMESIZE].frame_number = f;
+        pt2[page % sys_size.FRAMESIZE].vflag = true;
+        pt2[page % sys_size.FRAMESIZE].ref = 1;
+
+        proc->fault_cnt++;
+        fault_flag = true;
+        printf(" (L2PT) PF,Allocated Frame %03d", pt2[page % sys_size.FRAMESIZE].frame_number);
+    }
+    // printf(" falut_cnt = %d", proc->fault_cnt);
+    // printf(" page sys_size.framesize = %d\n", page % sys_size.FRAMESIZE);
+    printf("\n");
+
     return true;
 }
-
 /*-------------------------------메인 함수--------------------------------------------------*/
 
 int main() {
     input();
 
-    //각 프로세스 별로 페이지 테이블 할당(VAS_PAGES만큼)
-    pte* page_tables_l1[process_count];
-    pte* page_tables_l2;
+    //각 프로세스 별로 페이지 테이블 엔트리 할당(VAS_PAGES만큼)
+    pte* page_tables_l1[MAX_PROCESS];
+    pte* page_tables_l2[MAX_PROCESS];
+
     struct list_head* pos;
     process_raw* proc;
     int i = 0;
@@ -103,9 +148,15 @@ int main() {
     list_for_each(pos, &job_queue) {
         page_tables_l1[i++] = calloc(sys_size.PAGESIZE / 4, sizeof(pte));
         frame_in_use[next_free_frame++] = true;
-    }
-    frame_in_use[next_free_frame] = true;
 
+    }
+    for (int j = 0; j < sys_size.FRAMESIZE; j++)
+    {
+        page_tables_l2[j] = calloc(sys_size.FRAMESIZE, sizeof(pte));
+    } 
+    
+
+    int cnt = 0;
 
     // Demand Paging 시뮬레이터: 모든 포레스가 번갈아 한 번씩 접근
     bool done = false;
@@ -115,22 +166,26 @@ int main() {
         list_for_each(pos, &job_queue) 
         {
             proc = list_entry(pos, process_raw, list);
-            if (proc->ref_len <= ref_indices[i])    {   i++;    continue;   }
+            if (proc->ref_len <= ref_indices_L1[i])    {   i++;    continue;   }
             //이 프로세스의 참조 시퀀스가 모두 끝났다면 패스
 
             done = false;
-            if (!simulator_L1(proc, i, page_tables_l1))
+            if (!simulator_L1(proc, i, page_tables_l1, page_tables_l2))
             {
                 printf("Out of memory!!\n");
-                ref_indices[i]--;
+                ref_indices_L1[i]--;
                 goto jump;
             }
-
+            //simulator_L2(proc, i, page_tables_l1, page_tables_l2);
+            proc->ref_cnt++;
             i++;
         }
+
+        // cnt++;
+        // if (cnt == 20)   break;
     }
     jump:
-    print_page_tables(page_tables_l1);
+    print_page_tables(page_tables_l1, page_tables_l2);
     return 0;
 }
 /*------------------------------- 함수 정의 --------------------------------------------------*/
@@ -164,6 +219,7 @@ void input()
         proc->pid = pid;
         proc->ref_len = len;
         proc->references = refs;
+        proc->ref_cnt = 0;
 
         INIT_LIST_HEAD(&proc->list);
         list_add_tail(&proc->list, &job_queue);
@@ -176,7 +232,7 @@ void input()
 }
 
 /*-------------------------------페이지 테이블 및 결과 출력 함수------------------------------*/
-void print_page_tables(pte* page_tables[])
+void print_page_tables(pte** page_tables_l1, pte** page_tables_l2)
 {
     struct list_head* pos;
     process_raw* proc;
@@ -189,22 +245,26 @@ void print_page_tables(pte* page_tables[])
     list_for_each(pos, &job_queue) {
         proc = list_entry(pos, process_raw, list);
 
-        int frame_count = 0;
-        for (int p = 0; p < sys_size.VAS_PAGES; p++) {
-            if (page_tables[i][p].vflag) frame_count++;
-        }
+        printf("** Process %03d: Allocated Frames=%03d PageFaults/References=%03d/%03d\n", proc->pid, proc->ref_cnt, proc->fault_cnt, ref_indices_L1[i]);
 
-        printf("** Process %03d: Allocated Frames=%03d PageFaults/References=%03d/%03d\n", proc->pid, frame_count + ((sys_size.VAS_PAGES * 4 / sys_size.PAGESIZE)), faults[i], ref_indices[i]);
 
-        for (int p = 0; p < sys_size.VAS_PAGES; p++) {
-            if (page_tables[i][p].vflag) {
-                printf("%03d -> %03d REF=%03d\n", p, page_tables[i][p].frame_number, page_tables[i][p].ref);
+        pte* l1_pt = page_tables_l1[proc->pid];
+        //unsigned char page = proc->references[ref_indices_L1[i]++];
+        unsigned char page = proc->references[0];
+
+        for (int j = 0; j < sys_size.PAGESIZE / 4; j++)
+        {
+            pte* l2_pt = page_tables_l2[l1_pt[j].page_number];
+            if (l1_pt[j].vflag && l1_pt[j].ref > 0)
+            {
+                printf("(L1PT) %03d -> %03d\n", l1_pt[j].page_number, l1_pt[j].frame_number);
+                
             }
         }
-        total_frame_count += frame_count + (sys_size.VAS_PAGES * 4 / sys_size.PAGESIZE);
-        total_page_faults += faults[i];
-        total_ref += ref_indices[i];
 
+        total_frame_count += proc->ref_cnt;
+        total_page_faults += proc->fault_cnt;
+        total_ref += ref_indices_L1[i];
         i++;
     }
     printf("Total: Allocated Frames=%03d Page Faults/References=%03d/%03d\n", total_frame_count, total_page_faults, total_ref);
